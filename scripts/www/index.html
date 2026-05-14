@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 安卓移动端核心适配 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
+    <title>哐吃哐吃的贪吃蛇 安卓触屏版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#22c55e',
+                        obstacle: '#475569',
+                        dark: '#0f172a',
+                        snake2: '#fb923c',
+                        enemy1: '#f43f5e',
+                        enemy2: '#a855f7',
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            overflow: hidden; 
+            position: fixed; 
+            width: 100vw; 
+            height: 100vh;
+            touch-action: none;
+        }
+        .author-mark { position: fixed; right: 16px; bottom: 16px; color: rgba(255,255,255,0.45); font-size: 13px; z-index: 10; }
+        .buff-float-tip { position: fixed; left:50%; top:35%; transform: translateX(-50%); z-index:20; pointer-events:none; backdrop-filter:blur(6px); background:rgba(0,0,0,0.55); padding:6px 16px; border-radius:999px; font-size:14px; opacity:0; transition:opacity 0.3s; }
+        .game-border { border: 4px solid rgba(255,255,255,0.1); border-radius: 16px; }
+
+        /* 移动端虚拟摇杆通用样式 */
+        .joystick {
+            position: fixed;
+            width: 140px;
+            height: 140px;
+            z-index: 100;
+            user-select: none;
+            pointer-events: auto;
+            display: none;
+        }
+        .joystick.show { display: block; }
+        .joy-bg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.12);
+            border: 2px solid rgba(255,255,255,0.25);
+            backdrop-filter: blur(8px);
+        }
+        .joy-knob {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 55px;
+            height: 55px;
+            margin-left: -27.5px;
+            margin-top: -27.5px;
+            border-radius: 50%;
+            background: rgba(34, 197, 94, 0.5);
+            border: 2px solid rgba(34, 197, 94, 0.9);
+            transform: translate(0, 0);
+            transition: transform 0.06s ease;
+        }
+        #joystickRight .joy-knob {
+            background: rgba(251, 146, 60, 0.5);
+            border-color: rgba(251, 146, 60, 0.9);
+        }
+        /* 暂停按钮 */
+        .pause-btn {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(59,130,246,0.25);
+            border: 2px solid rgba(59,130,246,0.6);
+            color: #fff;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(6px);
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-dark to-slate-900 min-h-screen text-white flex flex-col items-center justify-center p-1 font-sans">
+    <div class="author-mark">作者：CC-PERIOD</div>
+    <div id="buffFloatTip" class="buff-float-tip"></div>
+
+    <div class="text-center mb-1 scale-90">
+        <h1 class="text-2xl font-bold bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">哐吃哐吃的贪吃蛇</h1>
+        <p class="text-slate-400 text-xs">触屏摇杆操控 | 分身自动出现双摇杆</p>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2 mb-2 w-full max-w-sm px-2">
+        <div class="bg-slate-800/80 p-1 rounded text-center"><p class="text-xs text-slate-400">关卡</p><p id="level" class="text-lg font-bold text-primary">1</p></div>
+        <div class="bg-slate-800/80 p-1 rounded text-center"><p class="text-xs text-slate-400">得分</p><p id="score" class="text-lg font-bold text-blue-400">0</p></div>
+        <div class="bg-slate-800/80 p-1 rounded text-center"><p class="text-xs text-slate-400">复活</p><p id="revive" class="text-lg font-bold text-orange-400">1</p></div>
+    </div>
+
+    <div class="relative game-border bg-slate-900/60 overflow-hidden">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div class="mt-2 text-center text-slate-400 text-xs scale-90">
+        <p>空格暂停 | 分身自动开启右侧摇杆</p>
+    </div>
+
+    <div id="gameModal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+        <div class="bg-slate-800 rounded-xl p-6 w-full max-w-sm text-center shadow-2xl border border-white/10">
+            <h2 id="modalTitle" class="text-xl font-bold mb-3 text-primary">游戏开始</h2>
+            <p id="modalDesc" class="text-slate-300 mb-5 leading-relaxed text-sm"></p>
+            <div class="flex flex-col gap-3">
+                <button id="modalBtnPrimary" class="bg-primary hover:bg-primary/90 text-white font-bold py-2 px-6 rounded-lg w-full">开始</button>
+                <button id="modalBtnSecondary" class="hidden bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-6 rounded-lg w-full">重来</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 左摇杆：主蛇 -->
+    <div class="joystick show" id="joystickLeft" style="left:20px;bottom:20px;">
+        <div class="joy-bg"></div>
+        <div class="joy-knob" id="joyKnobLeft"></div>
+    </div>
+    <!-- 右摇杆：分身蛇 默认隐藏-->
+    <div class="joystick" id="joystickRight" style="right:20px;bottom:20px;">
+        <div class="joy-bg"></div>
+        <div class="joy-knob" id="joyKnobRight"></div>
+    </div>
+    <!-- 暂停按钮 -->
+    <div class="pause-btn" id="pauseBtn">⏸</div>
+
+    <script>
+        // 安卓移动端自适应画布
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        function resizeCanvas() {
+            const maxW = Math.min(window.innerWidth - 20, 520);
+            canvas.width = maxW;
+            canvas.height = maxW;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        const grid = 20, cols = canvas.width / grid;
+
+        // 三关配置
+        const SPEEDS = [240, 200, 140];
+        const TARGETS = [10, 12, 15];
+        const DESCS = [
+            "第一关：熟悉操作，无障碍物。",
+            "第二关：随机障碍+陷阱。",
+            "第三关：敌人蛇出动！头碰敌身即死。"
+        ];
+
+        let game = {
+            level: 1, score: 0, revive: 1, speed: SPEEDS[0], baseSpeed: SPEEDS[0],
+            running: false, paused: false, loop: null,
+            invisible: false, invTimer: null, speedTimer: null,
+            obstacles: [], split: false, shownSplitTip: false, pendingSplit: false,
+        };
+
+        let player = { x: 12*grid, y: 12*grid, dx: grid, dy: 0, body: [], len: 3 };
+        let clone = null;          // 玩家分身
+        let enemies = [];          // 敌人蛇数组
+        let fruit = { x: 0, y: 0, type: 0 };
+        let trap = { x: -1, y: -1, active: false };
+
+        // ---- 工具函数 ----
+        function makeSnake(x,y,dx,dy,len) { return {x,y,dx,dy,body:[],len}; }
+        
+        function isFree(x, y, skipList=[]) {
+            if (x<0||x>=canvas.width||y<0||y>=canvas.height) return false;
+            for (let o of game.obstacles) if (o.x===x&&o.y===y) return false;
+            if (trap.active && trap.x===x && trap.y===y) return false;
+            const all = [player, clone, ...enemies].filter(s => s && !skipList.includes(s));
+            for (let s of all) {
+                for (let seg of s.body) if (seg.x===x&&seg.y===y) return false;
+                if (s.x===x && s.y===y) return false;
+            }
+            return true;
+        }
+
+        function randomDir(notDx, notDy) {
+            const dirs = [{dx:grid,dy:0},{dx:-grid,dy:0},{dx:0,dy:grid},{dx:0,dy:-grid}];
+            const safe = dirs.filter(d => !(d.dx===-notDx && d.dy===-notDy));
+            return safe[Math.floor(Math.random()*safe.length)];
+        }
+
+        function mergeLen(l1, l2) { return Math.floor((l1 + l2) * 4 / 3); }
+
+        // ---- 生成逻辑 ----
+        function genFruit() {
+            for(let i=0;i<200;i++) {
+                const x = Math.floor(Math.random()*cols)*grid;
+                const y = Math.floor(Math.random()*cols)*grid;
+                if(isFree(x,y)) {
+                    fruit.x=x; fruit.y=y;
+                    const r = Math.random();
+                    if (r<0.7) fruit.type=0; else if(r<0.8) fruit.type=1;
+                    else if(r<0.9) fruit.type=2; else fruit.type=3;
+                    return;
+                }
+            }
+        }
+
+        function genTrap() {
+            if (game.level<2) { trap.active=false; return; }
+            trap.active=true;
+            for(let i=0;i<200;i++) {
+                const x = Math.floor(Math.random()*cols)*grid;
+                const y = Math.floor(Math.random()*cols)*grid;
+                if(isFree(x,y) && Math.abs(x-player.x)+Math.abs(y-player.y)>6*grid) {
+                    trap.x=x; trap.y=y; return;
+                }
+            }
+            trap.active=false;
+        }
+
+        function genObstacles() {
+            game.obstacles=[];
+            const safe = {x1:10*grid, x2:14*grid, y1:10*grid, y2:14*grid};
+            function inSafe(x,y) { return x>=safe.x1&&x<=safe.x2 && y>=safe.y1&&y<=safe.y2; }
+            const count = game.level===2 ? 8 : 16;
+            if (game.level>=2) {
+                for(let i=0;i<count;i++) {
+                    let ok=false;
+                    while(!ok) {
+                        const x=Math.floor(Math.random()*cols)*grid;
+                        const y=Math.floor(Math.random()*cols)*grid;
+                        if(!inSafe(x,y) && !game.obstacles.some(o=>o.x===x&&o.y===y)) {
+                            game.obstacles.push({x,y}); ok=true;
+                        }
+                    }
+                }
+            }
+        }
+
+        function spawnEnemies() {
+            enemies=[];
+            if (game.level!==3) return;
+            const cols_body=['#f43f5e','#a855f7'];
+            const cols_head=['#fda4af','#d8b4fe'];
+            for(let i=0;i<2;i++) {
+                for(let t=0;t<200;t++) {
+                    const x=Math.floor(Math.random()*cols)*grid;
+                    const y=Math.floor(Math.random()*cols)*grid;
+                    if(isFree(x,y) && Math.abs(x-player.x)+Math.abs(y-player.y)>10*grid) {
+                        const e = makeSnake(x,y,grid,0,3);
+                        e.colorBody=cols_body[i]; e.colorHead=cols_head[i];
+                        e.dx=randomDir(0,0).dx; e.dy=randomDir(0,0).dy;
+                        enemies.push(e);
+                        break;
+                    }
+                }
+            }
+        }
+
+        function respawnEnemy(e) {
+            for(let t=0;t<200;t++) {
+                const x=Math.floor(Math.random()*cols)*grid;
+                const y=Math.floor(Math.random()*cols)*grid;
+                if(isFree(x,y,[e])) {
+                    e.x=x; e.y=y; e.body=[]; e.len=3;
+                    e.dx=randomDir(0,0).dx; e.dy=randomDir(0,0).dy;
+                    return;
+                }
+            }
+        }
+
+        // ---- 敌人AI ----
+        function enemySmartMove(e) {
+            if (Math.random()<0.05) {
+                const nd = randomDir(e.dx, e.dy);
+                e.dx=nd.dx; e.dy=nd.dy;
+            }
+            let nx=e.x+e.dx, ny=e.y+e.dy;
+            let blocked = false;
+            if (nx<0||nx>=canvas.width||ny<0||ny>=canvas.height) blocked=true;
+            else for (let o of game.obstacles) if (o.x===nx&&o.y===ny) {blocked=true;break;}
+            
+            if (blocked) {
+                const dirs = [{dx:grid,dy:0},{dx:-grid,dy:0},{dx:0,dy:grid},{dx:0,dy:-grid}];
+                dirs.sort(()=>Math.random()-0.5);
+                for (let d of dirs) {
+                    let tx=e.x+d.dx, ty=e.y+d.dy;
+                    if (tx>=0&&tx<canvas.width&&ty>=0&&ty<canvas.height) {
+                        let free=true;
+                        for (let o of game.obstacles) if(o.x===tx&&o.y===ty){free=false;break;}
+                        if (free) { e.dx=d.dx; e.dy=d.dy; break; }
+                    }
+                }
+                return false;
+            }
+            return true;
+        }
+
+        function updateEnemies() {
+            for (let i=enemies.length-1; i>=0; i--) {
+                const e = enemies[i];
+                const canMove = enemySmartMove(e);
+                e.body.unshift({x:e.x, y:e.y});
+                if (canMove) {
+                    e.x += e.dx;
+                    e.y += e.dy;
+                } else {
+                    e.body.shift();
+                }
+                if (e.body.length > e.len) e.body.pop();
+
+                let dead = false;
+                for (let j=1; j<e.body.length; j++) {
+                    if (e.x===e.body[j].x && e.y===e.body[j].y) { dead=true; break; }
+                }
+                if (!dead) {
+                    for (let seg of player.body) if(e.x===seg.x&&e.y===seg.y){dead=true;break;}
+                    if (e.x===player.x && e.y===player.y) dead=true;
+                }
+                if (!dead && clone) {
+                    for (let seg of clone.body) if(e.x===seg.x&&e.y===seg.y){dead=true;break;}
+                    if (e.x===clone.x && e.y===clone.y) dead=true;
+                }
+                if (!dead) {
+                    for (let j=0; j<enemies.length; j++) {
+                        if (i===j) continue;
+                        const other = enemies[j];
+                        for (let seg of other.body) {
+                            if (e.x===seg.x && e.y===seg.y) {
+                                e.len = mergeLen(e.len, other.len);
+                                enemies.splice(j,1);
+                                if (j < i) i--;
+                                dead = false;
+                                showFloatTip("🔄 敌蛇合体", "text-purple-400");
+                                break;
+                            }
+                        }
+                        if (dead) break;
+                    }
+                }
+                if (!dead && trap.active && e.x===trap.x && e.y===trap.y) dead=true;
+
+                if (dead) respawnEnemy(e);
+                else {
+                    if (e.x===fruit.x && e.y===fruit.y) { e.len++; genFruit(); }
+                }
+            }
+        }
+
+        // ---- 玩家碰撞检测 ----
+        function checkPlayer(s) {
+            if (!game.invisible) {
+                if (s.x<0||s.x>=canvas.width||s.y<0||s.y>=canvas.height) return 'DIE';
+            } else {
+                if (s.x<0) s.x=canvas.width-grid; if(s.x>=canvas.width) s.x=0;
+                if (s.y<0) s.y=canvas.height-grid; if(s.y>=canvas.height) s.y=0;
+            }
+            if (!game.invisible) {
+                for (let o of game.obstacles) if(s.x===o.x&&s.y===o.y) return 'DIE';
+            }
+            for (let i=1; i<s.body.length; i++) if(s.x===s.body[i].x&&s.y===s.body[i].y) return 'DIE';
+            if (trap.active && s.x===trap.x && s.y===trap.y) return 'TRAP';
+            for (let e of enemies) {
+                for (let seg of e.body) if(s.x===seg.x&&s.y===seg.y) return 'DIE';
+                if (s.x===e.x && s.y===e.y) return 'DIE';
+            }
+            if (s===player && clone) {
+                for (let seg of clone.body) if(s.x===seg.x&&s.y===seg.y) return 'MERGE';
+                if (s.x===clone.x && s.y===clone.y) return 'MERGE';
+            }
+            if (s===clone && player) {
+                for (let seg of player.body) if(s.x===seg.x&&s.y===seg.y) return 'MERGE';
+                if (s.x===player.x && s.y===player.y) return 'MERGE';
+            }
+            return false;
+        }
+
+        // ---- 绘制 ----
+        function drawHead(x,y,c1) {
+            ctx.fillStyle=c1; ctx.beginPath(); ctx.roundRect(x+1,y+1,grid-3,grid-3,6); ctx.fill();
+            ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+            ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x+6,y+7,3,0,Math.PI*2); ctx.arc(x+14,y+7,3,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(x+6,y+7,1.5,0,Math.PI*2); ctx.arc(x+14,y+7,1.5,0,Math.PI*2); ctx.fill();
+        }
+        function drawBody(s,c) {
+            ctx.fillStyle=game.invisible?'rgba(74,222,128,0.45)':c;
+            ctx.strokeStyle='#fff'; ctx.lineWidth=1.2;
+            for(let seg of s.body){ctx.beginPath();ctx.roundRect(seg.x+1,seg.y+1,grid-3,grid-3,4);ctx.fill();if(!game.invisible)ctx.stroke();}
+        }
+        function drawFruit() {
+            const cx=fruit.x+grid/2, cy=fruit.y+grid/2, r=(grid/2-2)*1.3;
+            ctx.fillStyle=['#facc15','#10b981','#a855f7','#f97316'][fruit.type];
+            ctx.beginPath();
+            if(fruit.type===0){drawStar(cx,cy,5,r,r/2);}else if(fruit.type===1){drawDiamond(cx,cy,r);}else if(fruit.type===2){drawHeart(cx,cy,r);}else{ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(cx-4,cy-4,r*0.35,0,Math.PI*2);ctx.fill();}
+        }
+        function drawTrap() {
+            if(!trap.active)return; const cx=trap.x+grid/2,cy=trap.y+grid/2,r=grid/2-2;
+            ctx.fillStyle='#ef4444';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+            ctx.fillStyle='#fff';ctx.font='bold 16px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',cx,cy);
+        }
+        function drawStar(cx,cy,sp,or,ir){let rot=Math.PI/2*3,step=Math.PI/sp;ctx.beginPath();ctx.moveTo(cx,cy-or);for(let i=0;i<sp;i++){ctx.lineTo(cx+Math.cos(rot)*or,cy+Math.sin(rot)*or);rot+=step;ctx.lineTo(cx+Math.cos(rot)*ir,cy+Math.sin(rot)*ir);rot+=step;}ctx.closePath();ctx.fill();}
+        function drawDiamond(cx,cy,r){ctx.beginPath();ctx.moveTo(cx,cy-r);ctx.lineTo(cx+r,cy);ctx.lineTo(cx,cy+r);ctx.lineTo(cx-r,cy);ctx.closePath();ctx.fill();}
+        function drawHeart(cx,cy,s){ctx.beginPath();ctx.moveTo(cx,cy+s/4);ctx.bezierCurveTo(cx-s,cy-s/2,cx-s,cy-s,cx,cy-s/3);ctx.bezierCurveTo(cx+s,cy-s,cx+s,cy-s/2,cx,cy+s/4);ctx.fill();}
+        function drawGame() {
+            ctx.fillStyle='#0b1121';ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle='#475569';for(let o of game.obstacles){ctx.beginPath();ctx.roundRect(o.x+1,o.y+1,grid-3,grid-3,4);ctx.fill();}
+            drawTrap(); drawFruit();
+            drawBody(player,'#4ade80'); drawHead(player.x,player.y,'#86efac');
+            if(clone){drawBody(clone,'#fb923c');drawHead(clone.x,clone.y,'#fdba74');}
+            for(let e of enemies){drawBody(e,e.colorBody);drawHead(e.x,e.y,e.colorHead);}
+            if(game.paused){ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#fff';ctx.font='bold 36px sans-serif';ctx.textAlign='center';ctx.fillText('暂停中',canvas.width/2,canvas.height/2);}
+        }
+
+        // ---- 游戏循环 ----
+        function loop() {
+            if(!game.running||game.paused) return;
+            if(game.level===3) updateEnemies();
+
+            player.body.unshift({x:player.x,y:player.y});
+            player.x+=player.dx; player.y+=player.dy;
+            if(player.body.length>player.len) player.body.pop();
+
+            if(clone) {
+                clone.body.unshift({x:clone.x,y:clone.y});
+                clone.x+=clone.dx; clone.y+=clone.dy;
+                if(clone.body.length>clone.len) clone.body.pop();
+            }
+
+            const r1 = checkPlayer(player);
+            if (r1==='DIE'){gameOver();return;}
+            if (r1==='TRAP'){hitTrap(player);return;}
+            if (r1==='MERGE'){mergePlayer(); drawGame(); return;}
+
+            if(clone) {
+                const r2 = checkPlayer(clone);
+                if(r2==='DIE'){gameOver();return;}
+                if(r2==='TRAP'){hitTrap(clone);return;}
+                if(r2==='MERGE'){mergePlayer(); drawGame(); return;}
+            }
+
+            if(player.x===fruit.x&&player.y===fruit.y) eatFruit(player);
+            if(clone && clone.x===fruit.x&&clone.y===fruit.y) eatFruit(clone);
+
+            drawGame();
+        }
+
+        // 合体 隐藏右摇杆
+        function mergePlayer() {
+            if(!clone) return;
+            player.len = mergeLen(player.len, clone.len);
+            clone = null;
+            game.split = false;
+            // 隐藏分身摇杆
+            document.getElementById('joystickRight').classList.remove('show');
+            showFloatTip("🤝 合体！长度强化", "text-green-400");
+        }
+
+        function eatFruit(s) {
+            s.len++; game.score++; document.getElementById('score').textContent=game.score;
+            const msgs = ['⭐ +1','💎 加速','💜 隐身','🧡 复活+1'];
+            showFloatTip(msgs[fruit.type], 'text-yellow-400');
+            if(fruit.type===1){game.speed=70;clearTimeout(game.speedTimer);game.speedTimer=setTimeout(()=>{game.speed=game.baseSpeed;restartLoop();},5000);}
+            if(fruit.type===2){game.invisible=true;clearTimeout(game.invTimer);game.invTimer=setTimeout(()=>game.invisible=false,5000);}
+            if(fruit.type===3){game.revive++;document.getElementById('revive').textContent=game.revive;}
+            checkWin(); genFruit();
+        }
+
+        function hitTrap(s) {
+            if(game.split) { gameOver(); return; }
+            if(!game.shownSplitTip) {
+                game.pendingSplit=true; clearInterval(game.loop); game.running=false;
+                showModal("👿 踩陷阱！","已解锁分身摇杆<br>右侧摇杆控制分身", "确定", null);
+            } else {
+                doSplit(); genTrap();
+            }
+        }
+
+        // 分身 显示右摇杆
+        function doSplit() {
+            game.split=true; game.shownSplitTip=true;
+            const s2dx = player.dx!==0 ? -player.dx : 0;
+            const s2dy = player.dy!==0 ? -player.dy : (s2dx===0?grid:0);
+            clone = makeSnake(player.x, player.y, s2dx, s2dy, player.len);
+            // 显示分身摇杆
+            document.getElementById('joystickRight').classList.add('show');
+        }
+
+        function checkWin() {
+            if(game.score >= TARGETS[game.level-1]) {
+                if(game.level===3) showModal("🎉 通关！","三关全过！","再来一局",null);
+                else { game.level++; document.getElementById('level').textContent=game.level; startLevel(); }
+            }
+        }
+
+        function gameOver() {
+            if(game.revive>0) {
+                game.revive--; document.getElementById('revive').textContent=game.revive;
+                clone=null; game.split=false;
+                document.getElementById('joystickRight').classList.remove('show');
+                player.body=[]; player.x=12*grid; player.y=12*grid; player.dx=grid; player.dy=0; player.len=3;
+                genFruit(); genTrap(); showFloatTip("✨ 复活","text-revive"); drawGame();
+            } else {
+                clearInterval(game.loop); game.running=false; clone=null; game.split=false;
+                document.getElementById('joystickRight').classList.remove('show');
+                showModal("游戏结束",`得分：${game.score}<br>关卡：${game.level}`,"重玩本关","从头开始");
+            }
+        }
+
+        function startLevel() {
+            game.score=0; document.getElementById('score').textContent=0;
+            player.body=[]; player.x=12*grid; player.y=12*grid; player.dx=grid; player.dy=0; player.len=3;
+            game.baseSpeed=SPEEDS[game.level-1]; game.speed=game.baseSpeed;
+            clone=null; game.split=false; enemies=[];
+            document.getElementById('joystickRight').classList.remove('show');
+            genObstacles(); genFruit(); genTrap();
+            if(game.level===3) spawnEnemies();
+            drawGame();
+            showModal(`第${game.level}关`, DESCS[game.level-1], "开始游戏", null);
+        }
+
+        function showModal(t,d,b1,b2) {
+            document.getElementById('modalTitle').textContent=t;
+            document.getElementById('modalDesc').innerHTML=d.replace(/\n/g,'<br>');
+            document.getElementById('modalBtnPrimary').textContent=b1;
+            const b2e=document.getElementById('modalBtnSecondary');
+            if(b2){b2e.textContent=b2;b2e.classList.remove('hidden');}else{b2e.classList.add('hidden');}
+            document.getElementById('gameModal').classList.remove('hidden');
+        }
+
+        function startGame() {
+            document.getElementById('gameModal').classList.add('hidden');
+            if(game.pendingSplit){game.pendingSplit=false;doSplit();genTrap();}
+            game.running=true; game.paused=false; restartLoop();
+        }
+
+        function restartLoop(){clearInterval(game.loop);game.loop=setInterval(loop,game.speed);}
+        function resetGame(){game.level=1;game.revive=1;game.invisible=false;game.shownSplitTip=false;document.getElementById('revive').textContent=1;document.getElementById('level').textContent=1;startLevel();}
+        function restartLevel(){game.invisible=false;game.shownSplitTip=false;clone=null;enemies=[];document.getElementById('joystickRight').classList.remove('show');startLevel();}
+
+        function showFloatTip(t,c){const el=document.getElementById('buffFloatTip');el.className='buff-float-tip '+c;el.innerText=t;el.style.opacity='1';setTimeout(()=>el.style.opacity='0',1500);}
+
+        // 键盘兼容保留
+        document.addEventListener('keydown',e=>{
+            if(e.code==='Space'){e.preventDefault();if(game.running){game.paused=!game.paused;if(game.paused)clearInterval(game.loop);else restartLoop();drawGame();}return;}
+            if(!game.running||game.paused)return;
+            const k=e.key;
+            if((k==='ArrowUp'||k==='w')&&player.dy===0){player.dy=-grid;player.dx=0;}
+            else if((k==='ArrowDown'||k==='s')&&player.dy===0){player.dy=grid;player.dx=0;}
+            else if((k==='ArrowLeft'||k==='a')&&player.dx===0){player.dx=-grid;player.dy=0;}
+            else if((k==='ArrowRight'||k==='d')&&player.dx===0){player.dx=grid;player.dy=0;}
+            if(clone&&game.split){
+                if((k==='i')&&clone.dy===0){clone.dy=-grid;clone.dx=0;}
+                else if((k==='k')&&clone.dy===0){clone.dy=grid;clone.dx=0;}
+                else if((k==='j')&&clone.dx===0){clone.dx=-grid;clone.dy=0;}
+                else if((k==='l')&&clone.dx===0){clone.dx=grid;clone.dy=0;}
+            }
+        });
+
+        document.getElementById('modalBtnPrimary').addEventListener('click',()=>{
+            const t=document.getElementById('modalBtnPrimary').textContent;
+            if(t==='重玩本关')restartLevel();
+            else if(t==='从头开始'||t==='再来一局')resetGame();
+            else startGame();
+        });
+        document.getElementById('modalBtnSecondary').addEventListener('click',resetGame);
+        window.addEventListener('load',resetGame);
+
+        // ======================
+        // 安卓双摇杆触控逻辑
+        // ======================
+        const joyLeft = document.getElementById('joystickLeft');
+        const knobLeft = document.getElementById('joyKnobLeft');
+        const joyRight = document.getElementById('joystickRight');
+        const knobRight = document.getElementById('joyKnobRight');
+        const pauseBtn = document.getElementById('pauseBtn');
+
+        const maxRadius = 45;
+        let joyLeftActive = false, joyRightActive = false;
+        let leftCenterX, leftCenterY, rightCenterX, rightCenterY;
+
+        // 左摇杆 主蛇控制
+        joyLeft.addEventListener('touchstart', e => {
+            e.preventDefault();
+            joyLeftActive = true;
+            const rect = joyLeft.getBoundingClientRect();
+            leftCenterX = rect.left + rect.width / 2;
+            leftCenterY = rect.top + rect.height / 2;
+        });
+        document.addEventListener('touchmove', e => {
+            e.preventDefault();
+            // 左摇杆
+            if(joyLeftActive){
+                const t = e.touches[0];
+                let dx = t.clientX - leftCenterX;
+                let dy = t.clientY - leftCenterY;
+                const dist = Math.hypot(dx, dy);
+                if(dist > maxRadius){ dx = dx/dist*maxRadius; dy = dy/dist*maxRadius; }
+                knobLeft.style.transform = `translate(${dx}px, ${dy}px)`;
+                // 方向逻辑
+                if(Math.abs(dx) > Math.abs(dy)){
+                    if(dx > 15 && player.dx === 0) { player.dx = grid; player.dy = 0; }
+                    else if(dx < -15 && player.dx === 0) { player.dx = -grid; player.dy = 0; }
+                }else{
+                    if(dy > 15 && player.dy === 0) { player.dy = grid; player.dx = 0; }
+                    else if(dy < -15 && player.dy === 0) { player.dy = -grid; player.dx = 0; }
+                }
+            }
+            // 右摇杆 分身控制
+            if(joyRightActive && clone){
+                const t = e.touches[0];
+                let dx = t.clientX - rightCenterX;
+                let dy = t.clientY - rightCenterY;
+                const dist = Math.hypot(dx, dy);
+                if(dist > maxRadius){ dx = dx/dist*maxRadius; dy = dy/dist*maxRadius; }
+                knobRight.style.transform = `translate(${dx}px, ${dy}px)`;
+                if(Math.abs(dx) > Math.abs(dy)){
+                    if(dx > 15 && clone.dx === 0) { clone.dx = grid; clone.dy = 0; }
+                    else if(dx < -15 && clone.dx === 0) { clone.dx = -grid; clone.dy = 0; }
+                }else{
+                    if(dy > 15 && clone.dy === 0) { clone.dy = grid; clone.dx = 0; }
+                    else if(dy < -15 && clone.dy === 0) { clone.dy = -grid; clone.dx = 0; }
+                }
+            }
+        });
+        document.addEventListener('touchend', () => {
+            if(joyLeftActive){
+                joyLeftActive = false;
+                knobLeft.style.transform = 'translate(0,0)';
+            }
+            if(joyRightActive){
+                joyRightActive = false;
+                knobRight.style.transform = 'translate(0,0)';
+            }
+        });
+        // 右摇杆按下
+        joyRight.addEventListener('touchstart', e => {
+            e.preventDefault();
+            joyRightActive = true;
+            const rect = joyRight.getBoundingClientRect();
+            rightCenterX = rect.left + rect.width / 2;
+            rightCenterY = rect.top + rect.height / 2;
+        });
+        // 暂停按钮
+        pauseBtn.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if(game.running){
+                game.paused = !game.paused;
+                if(game.paused) clearInterval(game.loop);
+                else restartLoop();
+                drawGame();
+            }
+        });
+        // 禁止安卓浏览器缩放、双击放大
+        document.addEventListener('touchstart', e => {
+            if(e.touches.length > 1) e.preventDefault();
+        }, {passive:false});
+        let lastTouch = 0;
+        document.addEventListener('touchend', e => {
+            const now = Date.now();
+            if(now - lastTouch < 250) e.preventDefault();
+            lastTouch = now;
+        }, {passive:false});
+    </script>
+</body>
+</html>
